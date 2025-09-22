@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Board Game Helper — Xúc Xắc, Hiệu Ứng & Trap</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    :root { 
+      --die-size: clamp(96px, 28vw, 160px);
+      --pip-size: clamp(10px, 3vw, 18px);
+      --shadow: 0 6px 18px rgba(0,0,0,.15);
+    } 
+    body { background:#f7fafc; }
+    .die { width: var(--die-size); height: var(--die-size); border-radius:20px; background:#fff; box-shadow:var(--shadow); margin:auto; position:relative; }
+    .pip { position:absolute; width:var(--pip-size); height:var(--pip-size); border-radius:50%; background:#111; }
+    .tl{top:14%;left:14%}.tc{top:14%;left:50%;transform:translateX(-50%)}.tr{top:14%;right:14%}
+    .ml{top:50%;left:14%;transform:translateY(-50%)}.mc{top:50%;left:50%;transform:translate(-50%,-50%)}.mr{top:50%;right:14%;transform:translateY(-50%)}
+    .bl{bottom:14%;left:14%}.bc{bottom:14%;left:50%;transform:translateX(-50%)}.br{bottom:14%;right:14%}
+    .roll-anim{animation:roll .6s}@keyframes roll{0%{transform:rotate(0) scale(1)}50%{transform:rotate(12deg) scale(1.05)}100%{transform:rotate(0) scale(1)}}
+
+    /* MOBILE TWEAKS */
+    @media (max-width: 576px){
+      .container { padding-left: 1rem; padding-right: 1rem; }
+      .card-header { font-size: 0.95rem; }
+      .card-body { padding: 0.9rem; }
+      .btn { padding: .75rem 1rem; font-size: 1rem; }
+      #trapResult small { font-size: .95rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-3 sticky-top bg-body pt-2" style="z-index:1020;">
+      <h1 class="h5 mb-0">🎲 Board Game Helper</h1>
+      <button id="btnClearLogs" class="btn btn-outline-danger btn-sm">🧹 Xóa lịch sử</button>
+    </div>
+    <div class="row g-4">
+      <!-- LEFT: Buttons for effects (on mobile this column goes last) -->
+      <div class="col-12 col-lg-4 order-3 order-lg-1">
+        <div class="card mb-3">
+          <div class="card-header">Hiệu ứng thường</div>
+          <div class="card-body d-grid gap-2">
+            <button class="btn btn-success w-100" id="drawBenefit">✅ Random Có lợi</button>
+            <button class="btn btn-warning w-100" id="drawHarm">⚠️ Random Bất lợi</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">Hiệu ứng cực mạnh</div>
+          <div class="card-body d-grid gap-2">
+            <button class="btn btn-success w-100" id="drawBenefitX">💥 Random Có lợi CM</button>
+            <button class="btn btn-warning w-100" id="drawHarmX">🔥 Random Bất lợi CM</button>
+          </div>
+        </div>
+      </div>
+      <!-- CENTER: Dice (on mobile this goes first) -->
+      <div class="col-12 col-lg-4 order-1 order-lg-2">
+        <div class="card text-center">
+          <div class="card-header">Xúc xắc</div>
+          <div class="card-body">
+            <div id="die" class="die mb-3"></div>
+            <button id="btnRoll" class="btn btn-primary w-100 w-sm-auto">🎲 Lắc xúc xắc</button>
+            <div class="mt-2">Kết quả: <span id="rollResult">—</span></div>
+          </div>
+        </div>
+        <div class="card mt-3">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <span>📜 Lịch sử</span>
+            <button class="btn btn-sm btn-outline-secondary d-lg-none" data-bs-toggle="collapse" data-bs-target="#histCollapse" aria-expanded="false" aria-controls="histCollapse">Hiện/Ẩn</button>
+          </div>
+          <div id="histCollapse" class="collapse d-lg-block">
+            <ul class="list-group list-group-flush" id="history"></ul>
+          </div>
+        </div>
+      </div>
+      <!-- RIGHT: Trap (on mobile this goes second) -->
+      <div class="col-12 col-lg-4 order-2 order-lg-3">
+        <div class="card">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <span>Trap</span>
+            <button id="drawTrap" class="btn btn-sm btn-dark">🎯 Random Trap</button>
+          </div>
+          <div class="card-body" id="trapResult">Chưa bốc thăm trap nào.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    const DATA={
+      benefit:[
+        {title:"Đỡ Đòn Thành Công",desc:"Miễn trừ hiệu ứng bất lợi tiếp theo từ đối thủ hoặc từ ô bạn đứng vào."},
+        {title:"Khóa Tay Nhu Thuật",desc:"\"Khóa\" một người chơi khác, khiến họ mất lượt ở vòng tiếp theo."},
+        {title:"Hồi Sức",desc:"Hồi phục 1 mạng (nếu có) hoặc thoát khỏi một hiệu ứng tiêu cực đang áp dụng lên bạn."}],
+      harm:[
+        {title:"Mất Thăng Bằng",desc:"Lùi lại 5 ô."},
+        {title:"Đối Thủ Mạnh Hơn",desc:"Bị đẩy lùi về vị trí của người chơi xếp nhất trước bạn."},
+        {title:"Mệt Mỏi",desc:"Số ô di chuyển lượt tiếp theo bị giảm một nửa (làm tròn xuống)."},
+        {title:"Bong Gân",desc:"Bỏ lượt tiếp theo để \"hồi phục\"."}],
+      benefitX:[
+        {title:"Tái hiện tuyệt kỹ",desc:"Gây ảnh hưởng trực tiếp đến tất cả người chơi khác, bạn chọn 1 hiệu ứng duy nhất áp dụng."},
+        {title:"Bật thầy",desc:"Bạn được miễn nhiễm hoàn toàn với mọi hiệu ứng bất lợi trong 2 vòng."},
+        {title:"Song Đấu Thắng Lợi",desc:"Được rút thêm 2 thẻ hiệu ứng và giữ lại để dùng sau."}],
+      harmX:[
+        {title:"Chấn thương nặng",desc:"Bỏ lượt liên tiếp 2 vòng, trả lại 1 thẻ hiệu ứng có lợi (nếu có)."},
+        {title:"Thất bại tâm lí",desc:"Đổi vị trí cho người chơi cuối cùng, mất toàn bộ hiệu ứng có lợi."},
+        {title:"Lỗi kỹ thuật trầm trọng",desc:"Lùi về ô xuất phát, giảm 1 ô di chuyển vĩnh viễn."}],
+      traps:[
+        {title:"Mất Võ Công",desc:"Mất lượt tiếp theo (áp dụng cho người chơi khác)."},
+        {title:"Chiêu Đánh Lén",desc:"Lấy 1 thẻ từ tay đối thủ (chọn người chơi khác)."},
+        {title:"Trượt Kỹ Thuật",desc:"Lùi 2 ô, áp dụng cho bản thân."},
+        {title:"Mất Vũ Khí",desc:"Mất hiệu ứng của 1 thẻ kỹ năng đang sở hữu."},
+        {title:"Bị Khóa Đòn",desc:"Không được dùng kỹ năng trong 1 lượt kế tiếp."},
+        {title:"Ngã Sàn",desc:"Quay lại ô xuất phát của vòng này."},
+        {title:"Tinh Thần Thượng Võ",desc:"Bắt buộc tặng 1 thẻ thưởng cho người khác."},
+        {title:"Đòn Chưởng Lạc Đề",desc:"Mất 1 lượt và phải kể tên 1 thế võ hoặc danh lam VN."},
+        {title:"Võ Sinh Hồn Loạn",desc:"Đổi toàn bộ thẻ với người bên phải."},
+        {title:"Sư Phụ Kiểm Tra",desc:"Trả lời câu hỏi nhanh, sai thì mất lượt tiếp theo."}]
+    };
+
+    function rng(min,max){return Math.floor(Math.random()*(max-min+1))+min;}
+    function renderDie(n){const die=document.getElementById('die');die.innerHTML='';const map={1:['mc'],2:['tl','br'],3:['tl','mc','br'],4:['tl','tr','bl','br'],5:['tl','tr','mc','bl','br'],6:['tl','ml','tr','mr','bl','br']};map[n].forEach(pos=>{const p=document.createElement('span');p.className='pip '+pos;die.appendChild(p);});}
+    renderDie(6);
+
+    function addHistory(label,obj){const li=document.createElement('li');li.className='list-group-item';li.innerHTML=`<strong>${label}:</strong> ${obj.title||obj}<br><small>${obj.desc||''}</small>`;document.getElementById('history').prepend(li);}
+
+    document.getElementById('btnRoll').onclick=()=>{const n=rng(1,6);renderDie(n);document.getElementById('rollResult').textContent=n;addHistory('🎲 Xúc xắc',{title:n,desc:""})};
+    document.getElementById('drawBenefit').onclick=()=>{let pick=DATA.benefit[rng(0,DATA.benefit.length-1)];addHistory('✅ Có lợi',pick)};
+    document.getElementById('drawHarm').onclick=()=>{let pick=DATA.harm[rng(0,DATA.harm.length-1)];addHistory('⚠️ Bất lợi',pick)};
+    document.getElementById('drawBenefitX').onclick=()=>{let pick=DATA.benefitX[rng(0,DATA.benefitX.length-1)];addHistory('💥 Có lợi CM',pick)};
+    document.getElementById('drawHarmX').onclick=()=>{let pick=DATA.harmX[rng(0,DATA.harm.length-1)];addHistory('🔥 Bất lợi CM',pick)};
+    document.getElementById('drawTrap').onclick=()=>{let pick=DATA.traps[rng(0,DATA.traps.length-1)];document.getElementById('trapResult').innerHTML=`<strong>${pick.title}</strong><br><small>${pick.desc}</small>`;addHistory('🎯 Trap',pick)};
+
+    document.getElementById('btnClearLogs').onclick=()=>{document.getElementById('history').innerHTML='';};
+  </script>
+</body>
+</html>
